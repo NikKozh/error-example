@@ -29,7 +29,7 @@ trait TransactorSyntax {
 
   class DefaultTransactionOps[F[_], A](fa: F[A]) {
     def transact(xa: Transactor[F]): F[A] = {
-      println("ERROR! THIS SHOULDN'T BE!")
+      println("ERROR! THERE IS SHOULDN'T BE DEFAULT TRANSACTION CALLS")
       xa.transactWithMaster(fa)
     }
 
@@ -81,6 +81,6 @@ object Main extends IOApp.Simple {
     val transactor = new Transactor[IO]
     val service = new DbService[IO](database, transactor)
 
-    IO.delay(println("Is this even working? " + service.toString)) *> service.doAction *> service.doRead.void
+    IO.delay(println("service.toString: " + service.toString)) *> service.doAction *> service.doRead.void
   }
 }
