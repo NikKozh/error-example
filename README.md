@@ -5,7 +5,7 @@ Build output:
 
 `New body classDef:`
 ```scala
- List(@SourceFile("app/src/main/scala/org/error/app/Main.scala") @rewriteDefaultTransactorCalls @experimental class DbService[F[_$9]](database: Database[F], transactor: Transactor[F])(using evidence$1: Sync[F]) extends TransactorSyntax {
+List(@SourceFile("app/src/main/scala/org/error/app/Main.scala") @rewriteDefaultTransactorCalls @experimental class DbService[F[_$9]](database: Database[F], transactor: Transactor[F])(using evidence$1: Sync[F]) extends TransactorSyntax {
   def string$macro$1: String = "macros string"
   override def toString(): String = DbService.this.string$macro$1
   def doAction: F[Unit] = DbService.this.toDefaultTransactionOps[F, Unit](database.run[Unit](database.insert("ValueToInsert"))).transactWithMaster(transactor)
@@ -16,9 +16,9 @@ Build output:
 
 Runtime output:
 ```
-ERROR! THIS SHOULDN'T BE!
-ERROR! THIS SHOULDN'T BE!
-Is this even working? macros string
+ERROR! THERE IS SHOULDN'T BE DEFAULT TRANSACTION CALLS
+ERROR! THERE IS SHOULDN'T BE DEFAULT TRANSACTION CALLS
+service.toString: macros string
 running transaction inside DB
 inserting value ValueToInsert in DB
 Transacted with master
@@ -27,4 +27,4 @@ reading key SomeKey from DB
 Transacted with master
 ```
 
-(`.toString` macro part is here, so macros changes _was_ applied, but new transact call with replica is not)
+(`.toString` macro part is here, so macros changes _was_ applied, but as if new transact call with replica was not)
