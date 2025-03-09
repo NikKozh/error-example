@@ -2,11 +2,11 @@ package org.error.app
 
 import cats.effect.{IO, IOApp, Sync}
 import cats.implicits.*
-import org.error.macros.TransactorMacros.rewriteDefaultTransactorCalls
+import org.error.common.Transactor
+import org.error.macros.TransactorMacros.transactional
+import scala.language.implicitConversions
 
-import scala.annotation.experimental
-
-class Transactor[F[_]: Sync] {
+class TransactorImpl[F[_]: Sync] extends Transactor[F] {
   def transactWithMaster[A](fa: F[A]): F[A] = {
     fa <* Sync[F].delay(println("Transacted with master"))
   }
@@ -64,21 +64,21 @@ class Database[F[_]: Sync] {
     Sync[F].delay(println(s"running transaction inside DB")) *> fa
 }
 
-@experimental @rewriteDefaultTransactorCalls
+
 class DbService[F[_]: Sync](database: Database[F], transactor: Transactor[F]) extends TransactorSyntax {
   def doAction: F[Unit] =
-    database.run(database.insert("ValueToInsert")).transact(transactor)
+    transactional { database.run(database.insert("ValueToInsert")) }(transactor)//.transact(transactor)
 
   def doRead: F[String] =
-    database.run(database.read("SomeKey")).transact(transactor)
+    transactional {database.run(database.read("SomeKey")) }(transactor)
 }
 
-@experimental
+
 object Main extends IOApp.Simple {
 
   override def run: IO[Unit] = {
     val database = new Database[IO]
-    val transactor = new Transactor[IO]
+    val transactor = new TransactorImpl[IO]
     val service = new DbService[IO](database, transactor)
 
     IO.delay(println("service.toString: " + service.toString)) *> service.doAction *> service.doRead.void
