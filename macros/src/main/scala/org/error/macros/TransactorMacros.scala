@@ -1,79 +1,52 @@
 package org.error.macros
 
-import scala.annotation.{MacroAnnotation, experimental}
+import org.error.common.Transactor
 import scala.quoted.*
 
+/**
+ *https://softwaremill.com/scala-3-macros-tips-and-tricks/
+ *https://github.com/lampepfl/dotty-macro-examples
+ * debug macros via sbt ~compile
+ */
 object TransactorMacros {
 
-  @experimental
-  class rewriteDefaultTransactorCalls extends MacroAnnotation {
+  inline def transactional[F[_], A](query: F[A])(transactor: Transactor[F]): F[A] = ${ transactionalImpl('query)('transactor) }
 
-    override def transform(using quotes: Quotes)(tree: quotes.reflect.Definition): List[quotes.reflect.Definition] = {
-      import quotes.reflect.*
+  def transactionalImpl[F[_], A](query: Expr[F[A]])(transactor: Expr[Transactor[F]])(using Quotes, Type[F], Type[A]): Expr[F[A]] =
+    import quotes.reflect.*
+    val methodTree = resolveMethod
 
-      class TreeMapper(resultTransactMethod: String) extends TreeMap {
-        override def transformTerm(tree: quotes.reflect.Term)(owner: quotes.reflect.Symbol): quotes.reflect.Term =
-          tree match {
-            case Select(qualifier, "transact") =>
-              Select.copy(tree)(transformTerm(qualifier)(owner), resultTransactMethod)
-            case _ =>
-              super.transformTerm(tree)(owner)
-          }
+    //tree branches https://www.scala-lang.org/api/3.x/scala/quoted/Quotes$reflectModule.html
+    def findInsertClauses(tree: Tree): Boolean =
+      tree match
+        case Select(Ident("database"),"insert") => true
+        case DefDef(_,_,_,Some(tree)) => findInsertClauses(tree)
+        case Block(first, second) =>  first.exists(findInsertClauses) || findInsertClauses(second)
+        case Apply(tree, args) =>  findInsertClauses(tree) || args.exists(findInsertClauses)
+        case TypeApply(tree, args) =>  findInsertClauses(tree) || args.exists(findInsertClauses)
+        case Ident(_) =>  false
+        case _ => false
+
+    //https://docs.scala-lang.org/scala3/guides/macros/reflection.html#printing-the-trees
+    if(findInsertClauses(methodTree))
+      report.info(s"Invoke into a master transaction with tree: ${methodTree.show(using Printer.TreeStructure)}")
+      '{
+        $transactor.transactWithMaster($query)
+      }
+    else
+      report.info(s"Invoke into a replicas transaction with tree: ${methodTree.show(using Printer.TreeStructure)}")
+      '{
+        $transactor.transactWithReplica($query)
       }
 
-      def processTransactionalMember(tree: Term, name: String): Term = {
-        val memberCode: String = tree.show
+  /**
+   * example https://github.com/lampepfl/dotty-macro-examples/blob/main/outOfScopeMethodCall/src/macro.scala
+   */
+  def resolveMethod(using Quotes): quotes.reflect.Tree =
+    import quotes.reflect.*
+    var sym = Symbol.spliceOwner // symbol of method where the macro is expanded
+    while sym != null && !sym.isDefDef do
+      sym = sym.owner // owner of a symbol is what encloses it: e.g. enclosing method or enclosing class
+    sym.tree //TODO need to change in a prod https://docs.scala-lang.org/scala3/guides/macros/best-practices.html#avoid-symboltree
 
-        if (memberCode.contains(".transact(")) {
-          val resultTransactMethod =
-            if (memberCode.contains(".run["))
-              if (memberCode.contains(".insert("))
-                "transactWithMaster"
-              else
-                "transactWithReplica"
-            else
-              report.errorAndAbort("abort", tree.asExprOf[Any])
-
-          new TreeMapper(resultTransactMethod).transformTerm(tree)(tree.symbol)
-        } else {
-          tree
-        }
-      }
-
-      tree match {
-        case ClassDef(className, constructor, parents, self, classBody) =>
-          val newClassBody =
-            classBody.map {
-              case methodTree@DefDef(methodName, params, returningType, Some(methodBody)) =>
-                val methodNewBody = processTransactionalMember(methodBody, s"$className#$methodName")
-                DefDef.copy(methodTree)(methodName, params, returningType, Some(methodNewBody))
-
-              case other =>
-                other
-            }
-
-          val cls = tree.symbol
-          val stringMethType = ByNameType.apply(TypeRepr.of[String])
-          val stringSym =
-            Symbol.newMethod(cls, Symbol.freshName("string"), stringMethType, Flags.Private, Symbol.noSymbol)
-          val stringDef = DefDef(stringSym, _ => Some(Literal(StringConstant("macros string"))))
-
-          val toStringMethType = Symbol.requiredMethod("java.lang.Object.toString").info
-          val toStringOverrideSym = Symbol.newMethod(cls, "toString", toStringMethType, Flags.Override, Symbol.noSymbol)
-          val toStringDef = DefDef(toStringOverrideSym, _ => Some(Ref(stringSym)))
-
-          val result =
-            List(ClassDef.copy(tree)(className, constructor, parents, self, stringDef :: toStringDef :: newClassBody))
-
-          println("New body classDef: " + result.map(_.show(using Printer.TreeShortCode)))
-
-          result
-
-        case _ =>
-          report.error("Only classes supported!", tree.asExprOf[Any])
-          List(tree)
-
-      }
-    }
-  }
 }

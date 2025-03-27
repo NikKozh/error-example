@@ -13,8 +13,15 @@ lazy val commonSettings = Seq(
   ),
 )
 
+lazy val common = (project in file("common"))
+  .settings(commonSettings)
+  .settings(
+    name := "common"
+  )
+
 lazy val macros = (project in file("macros"))
   .settings(commonSettings)
+  .dependsOn(common)
   .settings(
     name := "app-macros",
     libraryDependencies += "org.scala-lang" % "scala-reflect" % "2.13.16"

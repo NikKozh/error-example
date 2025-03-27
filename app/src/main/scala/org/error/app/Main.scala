@@ -2,11 +2,11 @@ package org.error.app
 
 import cats.effect.{IO, IOApp, Sync}
 import cats.implicits.*
-import org.error.macros.TransactorMacros.rewriteDefaultTransactorCalls
+import org.error.common.Transactor
+import org.error.macros.TransactorMacros.transactional
+import scala.language.implicitConversions
 
-import scala.annotation.experimental
-
-class Transactor[F[_]: Sync] {
+class TransactorImpl[F[_]: Sync] extends Transactor[F] {
   def transactWithMaster[A](fa: F[A]): F[A] = {
     fa <* Sync[F].delay(println("Transacted with master"))
   }
@@ -17,41 +17,11 @@ class Transactor[F[_]: Sync] {
 }
 
 trait TransactorSyntax {
-  class MasterTransactionOps[F[_], A](fa: F[A]) {
-    def transactWithMaster(xa: Transactor[F]): F[A] =
-      xa.transactWithMaster(fa)
-  }
-
-  class ReplicasTransactionOps[F[_], A](fa: F[A]) {
-    def transactWithReplica(xa: Transactor[F]): F[A] =
-      xa.transactWithReplica(fa)
-  }
-
-  class DefaultTransactionOps[F[_], A](fa: F[A]) {
-    def transact(xa: Transactor[F]): F[A] = {
-      println("ERROR! THERE IS SHOULDN'T BE DEFAULT TRANSACTION CALLS")
-      xa.transactWithMaster(fa)
+  extension [F[_], A] (inline fa: F[A])
+    inline def transact(xa: Transactor[F]): F[A] = {
+      transactional { fa }(xa)
     }
-
-    def transactWithMaster(xa: Transactor[F]): F[A] =
-      xa.transactWithMaster(fa)
-
-    def transactWithReplica(xa: Transactor[F]): F[A] =
-      xa.transactWithReplica(fa)
-  }
-
-  implicit def toMasterTransactionOps[F[_], A](fa: F[A]): MasterTransactionOps[F, A] =
-    new MasterTransactionOps(fa)
-
-  implicit def toReplicaTransactionOps[F[_], A](fa: F[A]): ReplicasTransactionOps[F, A] =
-    new ReplicasTransactionOps(fa)
-
-  implicit def toDefaultTransactionOps[F[_], A](fa: F[A]): DefaultTransactionOps[F, A] =
-    new DefaultTransactionOps(fa)
-
 }
-
-object TransactorSyntax extends TransactorSyntax
 
 class Database[F[_]: Sync] {
   def insert(value: String): F[Unit] =
@@ -64,7 +34,6 @@ class Database[F[_]: Sync] {
     Sync[F].delay(println(s"running transaction inside DB")) *> fa
 }
 
-@experimental @rewriteDefaultTransactorCalls
 class DbService[F[_]: Sync](database: Database[F], transactor: Transactor[F]) extends TransactorSyntax {
   def doAction: F[Unit] =
     database.run(database.insert("ValueToInsert")).transact(transactor)
@@ -73,12 +42,12 @@ class DbService[F[_]: Sync](database: Database[F], transactor: Transactor[F]) ex
     database.run(database.read("SomeKey")).transact(transactor)
 }
 
-@experimental
+
 object Main extends IOApp.Simple {
 
   override def run: IO[Unit] = {
     val database = new Database[IO]
-    val transactor = new Transactor[IO]
+    val transactor = new TransactorImpl[IO]
     val service = new DbService[IO](database, transactor)
 
     IO.delay(println("service.toString: " + service.toString)) *> service.doAction *> service.doRead.void
