@@ -30,7 +30,7 @@ object TransactorMacros {
               if (memberCode.contains(".insert("))
                 "transactWithMaster"
               else
-                "transactWithReplicas"
+                "transactWithReplica"
             else
               report.errorAndAbort("abort", tree.asExprOf[Any])
 
