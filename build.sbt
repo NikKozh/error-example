@@ -8,7 +8,8 @@ lazy val commonSettings = Seq(
     "-source:future",
     "-Yretain-trees",
     "-Xmax-inlines",
-    "64"
+    "64",
+    "-Xcheck-macros"
   ),
 )
 
